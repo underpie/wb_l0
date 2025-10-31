@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SuperOrders</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>SuperOrders</h1>
+    <p class="subtitle">Быстро / Легко</p>
+
+    <div class="search-box">
+      <input id="orderId" placeholder="Введите order_uid..." />
+      <button onclick="searchOrder()">Найти</button>
+    </div>
+
+    <hr />
+
+    <div class="orders-header">
+      <h2>Все заказы</h2>
+      <button id="sortBtn" onclick="toggleSort()">Сортировать по сумме ↓</button>
+    </div>
+
+    <div id="ordersList" class="orders-list"></div>
+  </div>
+
+  
+  <div id="popup" class="popup">
+    <div class="popup-content">
+      <span class="close" onclick="closePopup()">&times;</span>
+      <div id="popupBody" class="popup-body"></div>
+    </div>
+  </div>
+
+  <script>
+    let orders = [];
+    let sortDescending = true;
+
+    async function fetchOrders() {
+      const res = await fetch("/order/all");
+      if (!res.ok) return;
+      orders = await res.json();
+      renderOrders();
+    }
+
+    function renderOrders() {
+      const list = document.getElementById("ordersList");
+      list.innerHTML = "";
+
+      orders.forEach((order) => {
+        let data = order.data;
+        if (typeof data === "string") {
+          try {
+            data = JSON.parse(data);
+          } catch (e) {
+            console.error("Ошибка парсинга JSON:", e);
+            return;
+          }
+        }
+
+        const total = data.payment?.amount || 0;
+        const item = document.createElement("div");
+        item.className = "order-item";
+        item.innerHTML = `
+          <div class="order-summary">
+            <div><strong>${data.order_uid}</strong></div>
+            <div>${data.delivery?.name || "—"}</div>
+            <div>${total} ₽</div>
+          </div>
+        `;
+        item.onclick = () => showPopup(data);
+        list.appendChild(item);
+      });
+    }
+
+
+    function toggleSort() {
+      sortDescending = !sortDescending;
+      const btn = document.getElementById("sortBtn");
+      btn.textContent = sortDescending
+        ? "Сортировать по сумме ↓"
+        : "Сортировать по сумме ↑";
+
+      orders.sort((a, b) => {
+        let dataA = typeof a.data === "string" ? JSON.parse(a.data) : a.data;
+        let dataB = typeof b.data === "string" ? JSON.parse(b.data) : b.data;
+        const totalA = dataA.payment?.amount || 0;
+        const totalB = dataB.payment?.amount || 0;
+        return sortDescending ? totalB - totalA : totalA - totalB;
+      });
+
+      renderOrders();
+    }
+
+
+    function showPopup(order) {
+      const popup = document.getElementById("popup");
+      const body = document.getElementById("popupBody");
+      popup.style.display = "flex";
+
+      const d = order.delivery || {};
+      const p = order.payment || {};
+
+      body.innerHTML = `
+        <div class="popup-header">
+          <h2>Информация о заказе</h2>
+          <p><strong>Order UID:</strong> ${order.order_uid}</p>
+        </div>
+
+        <div class="popup-grid">
+          <div class="popup-column">
+            <div class="popup-card">
+              <h3>Данные клиента</h3>
+              <p><strong>Имя:</strong> ${d.name || "—"}</p>
+              <p><strong>Телефон:</strong> ${d.phone || "—"}</p>
+              <p><strong>Email:</strong> ${d.email || "—"}</p>
+            </div>
+
+            <div class="popup-card">
+              <h3>Доставка</h3>
+              <p><strong>Адрес:</strong> ${d.city || ""}, ${d.address || ""}</p>
+              <p><strong>Регион:</strong> ${d.region || ""}</p>
+              <p><strong>Индекс:</strong> ${d.zip || ""}</p>
+              <p><strong>Служба доставки:</strong> ${order.delivery_service || "—"}</p>
+            </div>
+          </div>
+
+          <div class="popup-column">
+            <div class="popup-card">
+              <h3>Оплата</h3>
+              <p><strong>Сумма:</strong> ${p.amount || 0} ${p.currency || ""}</p>
+              <p><strong>Банк:</strong> ${p.bank || "—"}</p>
+              <p><strong>Провайдер:</strong> ${p.provider || "—"}</p>
+              <p><strong>Стоимость доставки:</strong> ${p.delivery_cost || 0}</p>
+              <p><strong>Товары:</strong> ${p.goods_total || 0}</p>
+              <p><strong>Транзакция:</strong> ${p.transaction || "—"}</p>
+            </div>
+
+            <div class="popup-card">
+              <h3>Дополнительно</h3>
+              <p><strong>Дата создания:</strong> ${order.date_created}</p>
+              <p><strong>Locale:</strong> ${order.locale}</p>
+              <p><strong>Shardkey:</strong> ${order.shardkey}</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="popup-card wide">
+          <h3>Товары</h3>
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th>Название</th>
+                <th>Бренд</th>
+                <th>Цена</th>
+                <th>Скидка</th>
+                <th>Итого</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(order.items || [])
+                .map(
+                  (it) => `
+                <tr>
+                  <td>${it.name}</td>
+                  <td>${it.brand}</td>
+                  <td>${it.price}</td>
+                  <td>${it.sale}%</td>
+                  <td>${it.total_price}</td>
+                </tr>`
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function closePopup() {
+      document.getElementById("popup").style.display = "none";
+    }
+
+    async function searchOrder() {
+      const id = document.getElementById("orderId").value.trim();
+      if (!id) return;
+      const res = await fetch("/order/" + id);
+      const el = document.getElementById("ordersList");
+      if (!res.ok) {
+        el.innerHTML = "<p>Заказ не найден</p>";
+        return;
+      }
+      const data = await res.json();
+      showPopup(data);
+    }
+
+    window.onclick = function (event) {
+      const popup = document.getElementById("popup");
+      if (event.target === popup) {
+        popup.style.display = "none";
+      }
+    };
+
+    fetchOrders();
+  </script>
+</body>
+</html>
